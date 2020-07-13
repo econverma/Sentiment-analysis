@@ -1,2 +1,3 @@
 # Sentiment-analysis
-Sentiment analysis of books available on Gutenburger
+Sentiment analysis of books available on Gutenberg
+
