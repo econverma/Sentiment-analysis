@@ -1,0 +1,548 @@
+---
+title: 'Project Gutenberg Books Sensitivity Analysis'
+author: "Sujata Verma"
+date: "9/28/2020"
+output:
+  word_document: default
+  html_document: default
+abstract: This project aims to predict the "feel good" factor or the proportion of positive sentiments over negative sentiments in books across multiple genres using the Project Gutenberg free e-books dataset utilizing Sensitivity Analysis or Emotional Artificial Intelligence.
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message=FALSE,warning=FALSE)
+```
+
+
+```{r installing and loading packages,echo=FALSE}
+if(!require(tidytext)) install.packages("tidytext", repos = "http://cran.us.r-project.org")
+if(!require(gutenbergr)) install.packages("gutenbergr", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+if(!require(RColorBrewer)) install.packages("RColorBrewer", repos = "http://cran.us.r-project.org")
+if(!require(ggpubr)) install.packages("ggpubr", repos = "http://cran.us.r-project.org")
+
+options(digits = 3)
+
+```
+
+# Introduction
+In times of the pandemic, there has been an increase in the overall stress and anxiety among people and one of the ways of relaxing while sheltering at home has been reading books. Project Gutenberg is an online library of free e-books established by Michael Hart in 1971 to "encourage the creation and distribution of eBooks".There are over 50,000 works in this library, in many languages and across many genres.
+
+The central **objective** of this report is to identify the best books containing the highest proportion of words reflecting a positive sentiment, using the AFINN Sentiment Lexicon, in order to help readers select "feel good" books to read. AFINN Sentiment Lexicon is a list of words assigned numerical integer values for sentiments and range from -5 (negative sentiment) to +5(positive sentiment), manually compiled by Finn Årup Nielsen.
+
+# Obtaining the data
+In this section, the data is imported from the Gutenberg Library and the summary statistics are obtained to get an overview of the data.
+
+## Data Exploration
+The data set contains more than 50,000 books, documents etc. GutenbergID assigns a number to each of the works. Each work is specified with title and author name and assigned author ID number. Other variables are Language, Bookshelf (Genre), Rights (pertaining to copyright) and whether the work contains text.
+
+## Descriptive statistics 
+Nest, the distribution of non-binary numeric variables is explored. The table given below includes the mean, standard deviation, median, minimum value, maximum value, the range and skewness of the numeric variables.
+
+```{r importing data, echo=FALSE}
+## downloading the data
+gutenberg_metadata
+
+summary(gutenberg_metadata)
+```
+\newpage
+# Method and Analysis
+In the following section, the metadata containing 51,997 rows is reduced to about 1000 observations for speed up calculations. This means that around 1000 books will be downloaded and each word in each book will be examined and assigned a sensitivity score by comparing it against the AFINN Lexicon. 
+
+The following criteria are used to subset the data. Only english language books that contain text and fall under 'Public Domain in the U.S.' are considered. Stop-words like 'if', 'but', 'he' etc. are eliminated as are the numbers such as chapter numbers. The metadata defines numerous 'bookshelves' or sub-categories from 'Animals' to 'Zoology'. In this project, two or three bookshelf sub-categories are grouped together to define a genre and five different genres are defined from 16 sub-categories. The different genres are:
+
+1. *Lyric* consting of Operas, Playes and Poetry categories.
+2. *Classic* consisting of Harvard Classics, Historical Fiction,Classical and Antiquity categories.
+3. *Mystery* consisting of Detective Fiction, Crime Fiction, Gothic Fiction, and Horror categories.
+4. *Fun* consisting of Humor, Adventure and Fantasy categories.
+5. *Great* consisting of Best Books Ever Listings and Biographies categories.
+
+
+Next, sentiment analysis is applied to the books to predict the proportion of positive sentiment using the AFINN lexicon. The mean sentiment score, defined as the difference between positive over negative sentiments is then calculated for each book in the genre and aggregated for each genre.
+
+The top 10 books in each genre according to the mean sentiment score are tabulated.
+
+## Genre 1: Lyric
+
+```{r,echo=FALSE}
+##1.Sentiment analysis for Lyric Genre-Opera, plays and poetry
+
+gutenberg_lyric<-gutenberg_metadata%>%
+  filter(has_text=="TRUE" & language=="en")%>%
+  filter(rights=="Public domain in the USA.")%>%
+  filter(gutenberg_bookshelf%in% c("Opera", "Plays","Poetry"))%>% 
+  filter(gutenberg_id!="19784")#download operas , plays and poetry#removes Poetry Book Death
+
+
+k<-gutenberg_lyric$gutenberg_id
+
+
+compute_mean_k<-function(k) {
+  
+  book_k<-gutenberg_download(k)
+  
+  tidy_k <- book_k %>%
+    mutate(linenumber = row_number(),
+           chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", ignore_case = TRUE)))) %>%
+    unnest_tokens(word, text)
+  
+  tidy_k<-tidy_k%>% anti_join(stop_words)
+  
+  k_sentiment <- tidy_k %>%
+    inner_join(get_sentiments("bing")) %>%
+    count(word, index = linenumber %/% 80, sentiment) %>%
+    spread(sentiment, n, fill = 0) %>%
+    mutate(sentiment = positive - negative)
+  
+  mean(k_sentiment$sentiment>0)#proportion of positive over negative sentiment
+  
+  
+}
+
+mean_sentiment<-sapply(k,compute_mean_k)
+
+lyric<-mean(mean_sentiment)
+gutenberg_sentiment_lyric<-gutenberg_lyric%>%mutate(mean_sentiment=sapply(k,compute_mean_k))
+
+
+
+gutenberg_sentiment_lyric %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+
+```
+
+The top ten works in the Lyric genre are dominated by Operas, demonstrating the uplifting power of Operas.
+
+'Some Forerunners of Italian Opera' by W.J. Henderson is the highest positively ranked work in this genre with a score of 0.659. Project Gutenberg website introduces the book as follows "The purpose of this volume is to offer to the English reader a short study of the lyric drama in Italy prior to the birth of opera, and to note in its history the growth of the artistic elements and influences which finally led the Florentine reformers to resort to the ancient drama in their search for a simplified medium of expression." 
+
+## Genre 2: Classic
+
+Let us see how do Classics fare in terms of the sentiment analysis.
+
+```{r,echo=FALSE}
+##2. Sentiment analysis for Classics Genre-Harvard Classics, Historical Fiction,Classical Antiquity
+
+gutenberg_classic<-gutenberg_metadata%>%
+  filter(has_text=="TRUE" & language=="en")%>%
+  filter(rights=="Public domain in the USA.")%>%
+  filter(gutenberg_bookshelf%in% c("Harvard Classics", "Historical Fiction","Classical Antiquity"))
+
+
+
+k<-gutenberg_classic$gutenberg_id
+
+
+compute_mean_k<-function(k) {
+  
+  book_k<-gutenberg_download(k)
+  
+  tidy_k <- book_k %>%unnest_tokens(word, text)%>% 
+    anti_join(stop_words)%>%filter(!str_detect(word,"\\d"))
+  
+  k_sentiments <- tidy_k %>%
+    inner_join(get_sentiments("afinn"))
+  
+  mean(k_sentiments$value)
+  
+  }
+  
+
+mean_sentiment<-sapply(k,compute_mean_k)
+
+classic<-mean(mean_sentiment,na.rm="TRUE")
+
+gutenberg_sentiment_classic<-gutenberg_classic%>%mutate(mean_sentiment=sapply(k,compute_mean_k))
+
+
+gutenberg_sentiment_classic %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+
+```
+
+In the sub-category, The Harvard Classics,the book titled 'The New Atlantis', by author Francis Bacon is ranked at the top with the positivity score of 0.816. An introductory note about the book on the Guternberg website states "Bacon's literary executor, Dr. Rowley, published "The New Atlantis" in 1627, the year after the author's death. It seems to have been written about 1623, during that period of literary activity which followed Bacon's political fall. None of Bacon's writings gives in short apace so vivid a picture of his tastes and aspirations as this fragment of the plan of an ideal commonwealth. The generosity and enlightenment, the dignity and splendor, the piety and public spirit, of the inhabitants of Bensalem represent the ideal qualities which Bacon the statesman desired rather than hoped to see characteristic of his own country; and in Solomon's House we have Bacon the scientist indulging without restriction his prophetic vision of the future of human knowledge." 
+
+It is not surprising that The Bible finds a place in the top ten list as there is a surge of positive emotions when reading religious texts.
+
+## Genre 3. Mystery
+
+Next we analyze the sentiments of books in the mystery genre.
+
+```{r,echo=FALSE}
+##3. Sentiment analysis for Mystery Genre-Detective Fiction, Crime Fiction,Gothic Fiction,Horror
+
+gutenberg_mystery<-gutenberg_metadata%>%
+  filter(has_text=="TRUE" & language=="en")%>%
+  filter(rights=="Public domain in the USA.")%>%
+  filter(gutenberg_bookshelf%in% c("Detective Fiction", "Crime Fiction","Gothic Fiction","Horror"))%>%
+  filter(gutenberg_id!="19784")
+
+
+
+k<-gutenberg_mystery$gutenberg_id
+
+
+compute_mean_k<-function(k) {
+  
+  book_k<-gutenberg_download(k)
+  
+  tidy_k <- book_k %>%unnest_tokens(word, text)%>% 
+    anti_join(stop_words)%>%filter(!str_detect(word,"\\d"))
+  
+  k_sentiments <- tidy_k %>%
+    inner_join(get_sentiments("afinn"))
+  
+  mean(k_sentiments$value)
+  
+}
+
+
+mean_sentiment<-sapply(k,compute_mean_k)
+
+mystery<-mean(mean_sentiment)
+
+gutenberg_sentiment_mystery<-gutenberg_mystery%>%mutate(mean_sentiment=sapply(k,compute_mean_k))
+
+
+gutenberg_sentiment_mystery %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+#
+```
+
+Even though a number of readers like reading mystery books for the thrill, they do not score very highly on the Sentiment Score. The top book in this genre, The lady of the Shroud, is authored by Bram Stoker, and belongs to the Horror category.It scores only 0.331 on the sensitivity score.
+
+Bram Stoker, the famous author of Dracula, has written a supernatural fantasy in The Lady of the Shroud, with themes of a vampire tale, Balkan politics and a love story. 
+
+## Genre 4. Fun
+
+We next turn to the genre 'Fun' and analyze the sentiment associated with books in this genre.
+
+```{r, echo=FALSE}
+#4. Sentiment Analysis for Fun Genre-Humor, Adventure,Fantasy
+gutenberg_fun<-gutenberg_metadata%>%
+  filter(has_text=="TRUE" & language=="en")%>%
+  filter(rights=="Public domain in the USA.")%>%
+  filter(gutenberg_bookshelf%in% c( "Humor","Adventure","Fantasy"))
+
+k<-gutenberg_fun$gutenberg_id
+
+
+compute_mean_k<-function(k) {
+  
+  book_k<-gutenberg_download(k)
+  
+  tidy_k <- book_k %>%unnest_tokens(word, text)%>% 
+    anti_join(stop_words)%>%filter(!str_detect(word,"\\d"))
+  
+  k_sentiments <- tidy_k %>%
+    inner_join(get_sentiments("afinn"))
+  
+  mean(k_sentiments$value)
+  
+}
+
+mean_sentiment<-sapply(k,compute_mean_k)
+
+fun<-mean(mean_sentiment,na.rm="TRUE")
+
+gutenberg_sentiment_fun<-gutenberg_fun%>%mutate(mean_sentiment=sapply(k,compute_mean_k))
+
+
+gutenberg_sentiment_fun %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+
+```
+
+Most of the top books in this genre belong to the humor category, with J.L. Huff's "The Rubaiyat of Ohow Dryyam, With Apologies to Omar" taking the top Honors with a score of 0.714.The book is a parody of the famous The Rubaiyat by Omar Khayyam and it is about the prohibition-era.
+
+Most titles in the top 10 books in this genre are intriguing and provocative.
+
+## Genre 5. Great
+
+Lastly, we analyze the books belonging to the 'Great' genre.
+
+```{r,echo=FALSE}
+##5. Sentiment Analysis for Great Books Genre-Best Books Ever Listings, Biographies
+
+gutenberg_great<-gutenberg_metadata%>%
+  filter(has_text=="TRUE" & language=="en")%>%
+  filter(rights=="Public domain in the USA.")%>%
+  filter(gutenberg_bookshelf%in% c( "Biographies","Best Books Ever Listings"))
+
+
+k<-gutenberg_great$gutenberg_id
+
+
+compute_mean_k<-function(k) {
+  
+  book_k<-gutenberg_download(k)
+  
+  tidy_k <- book_k %>%unnest_tokens(word, text)%>% 
+    anti_join(stop_words)%>%filter(!str_detect(word,"\\d"))
+  
+  k_sentiments <- tidy_k %>%
+    inner_join(get_sentiments("afinn"))
+  
+  mean(k_sentiments$value)
+  
+}
+
+
+mean_sentiment<-sapply(k,compute_mean_k)
+
+great<-mean(mean_sentiment,na.rm="TRUE")
+
+gutenberg_sentiment_great<-gutenberg_great%>%mutate(mean_sentiment=sapply(k,compute_mean_k))
+
+
+gutenberg_sentiment_great %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+
+```
+
+The top book in this genre is titled 'Herland' by Charlotte Perkins Gilman and the Sensitivity Score associated with it is 0.64. Herland is an utopian novel about an all-female inhabited imaginary place, free of war and conflict.
+
+Next the Sensitivity mean scores in the five genre are compared in the table below. Lyric scores the highest followed by Great and Classic. Interestingly, Mystery and Fun( containing adventure books) do not score as high on positive sentiment scores. We need to go into the details at the sub-category level to find out the mean sentiment associated with each sub-category in each genre.
+
+```{r, echo=FALSE}
+options(digits = 3)
+
+## storing results for comparison
+genre_means <-tibble(classic,lyric,fun,mystery,great)%>%knitr::kable()
+genre_means
+
+
+
+
+```
+
+In this subsection, all the 934 books are combined into one large data set. Grouping by subcategories of genres, the average mean sentiment for all sub-categories is computed. It is easy to see that Poetry, Operas and Plays score very high on positive sentiment as do Biographies. For a number of  sub-categories the average score is close to neutral (0 sentiment score). For Detective and Crime Fiction as well as Adventure Books, negative sentiment dominates.
+
+Combining all the genres and then estimating the ten highest positive books  gives us the following results.
+
+```{r, echo=FALSE}
+#combining different genres
+gutenberg_sentiment_analysis<-rbind(gutenberg_sentiment_fun,gutenberg_sentiment_lyric)
+gutenberg_sentiment_analysis<-rbind(gutenberg_sentiment_analysis,gutenberg_sentiment_mystery)
+gutenberg_sentiment_analysis<-rbind(gutenberg_sentiment_analysis,gutenberg_sentiment_great)
+gutenberg_sentiment_analysis<-rbind(gutenberg_sentiment_analysis,gutenberg_sentiment_classic)
+
+## removing missing values
+index.na <- which(is.na(gutenberg_sentiment_analysis$mean_sentiment))
+gutenberg_sentiment_analysis <- gutenberg_sentiment_analysis[-index.na,]
+gutenberg_sentiment_analysis<-as.data.frame(gutenberg_sentiment_analysis) 
+
+
+##disaggreagating by sub-categories
+gutenberg_sentiment_analysis%>%group_by(gutenberg_bookshelf)%>%summarize(avg_mean_sentiment = mean(mean_sentiment))%>%
+    ggplot(aes(avg_mean_sentiment,gutenberg_bookshelf)) +
+    geom_point()
+  
+#boxplots by subcategories                                                                 
+  gutenberg_sentiment_analysis%>%ggplot(aes(x=gutenberg_bookshelf, y=mean_sentiment,fill=gutenberg_bookshelf))+
+  geom_boxplot()+ylab('Mean_sentiment')+xlab('Guternberg_bookshelf')+
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))+
+  theme(legend.position = "none")
+
+gutenberg_sentiment_analysis %>% select(title,author,gutenberg_bookshelf,mean_sentiment)%>%top_n(10,mean_sentiment)%>%knitr::kable()
+
+
+
+```
+
+# A Deep Dive into the Relationship between Emotions and Books
+In this section, we will look at a sample of books, one from each of the five genres, and explore how books take us through a roller-coaster of positive and negative emotions as the narrative progresses. The horizontal axis in the charts represents the progression of the book and the vertical axis shows the positive and negative sentiments generated, using the BING lexicon.
+
+BING Sentiment Lexicon was developed by Bing Liu and Collaborators and charateizes words in a binary positive or negative sentiments. Unlike the AFINN lexicon it doesn't assign a numerical sentiment value to words. 
+
+The Five books selected are as follows:
+
+Book 1:Crime and Punishment: Genre: Great
+
+```{r, echo=FALSE}
+##Book 1:Crime and Punishment: Genre: Great
+gutenberg_works(title=="Crime and Punishment")
+
+book_cp<-gutenberg_download(2554)
+
+
+tidy_cp <- book_cp %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
+                                                 ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_cp<-tidy_cp%>% anti_join(stop_words)
+
+cp_sentiment <- tidy_cp %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+cp_plot<-ggplot(cp_sentiment,aes(index,sentiment),fill=word,col=word)+geom_col(show.legend = FALSE,color="lightblue")+ ggtitle("Great: Crime and Punishment")+geom_hline(yintercept = 0,col="black")
+
+cp_plot
+
+mean_great<-mean(cp_sentiment$sentiment>0)#proportion of positive over negative sentiment
+
+Results<-tibble(method="Great:Crime and Punishment",  
+                 mean = mean_great)
+```
+
+Book 2:  The Merry Adventures of Robin Hood: Genre: Fun
+
+```{r, echo= FALSE}
+#Book 2:  The Merry Adventures of Robin Hood: Genre: Fun
+
+
+gutenberg_works(title=="The Merry Adventures of Robin Hood")
+
+book_rh<-gutenberg_download(964)
+
+
+tidy_rh <- book_rh %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
+                                                 ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_rh<-tidy_rh%>% anti_join(stop_words)
+
+rh_sentiment <- tidy_rh %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+rh_plot<-ggplot(rh_sentiment,aes(index,sentiment),fill=word,col=word)+geom_col(show.legend = FALSE,color="purple")+ ggtitle("Fun: The Merry Adventures of Robin Hood")+geom_hline(yintercept = 0,col="black")
+
+rh_plot
+
+mean_fun<-mean(rh_sentiment$sentiment>0)#proportion of positive over negative sentiment
+
+Results<-bind_rows(Results,tibble(method="Fun:The Merry Adventures of Robin Hood",  
+                mean = mean_fun))
+```
+
+Book 3:Mystery : The Rome Express
+
+```{r,echo=FALSE}
+#Book 3:Mystery : The Rome Express
+
+gutenberg_works(title=="The Rome Express")
+
+book_re<-gutenberg_download(11451)
+
+
+tidy_re <- book_re %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
+                                                 ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_re<-tidy_re%>% anti_join(stop_words)
+
+re_sentiment <- tidy_re %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+re_plot<-ggplot(re_sentiment,aes(index,sentiment),fill=word,col=word)+geom_col(show.legend = FALSE,color="darkgreen")+ ggtitle("Mystery: The Rome Express")+geom_hline(yintercept = 0,col="black")
+
+re_plot
+mean_mystery<-mean(re_sentiment$sentiment>0)#proportion of positive over negative sentiment
+
+Results<-bind_rows(Results,tibble(method="Mystery:The Rome Express",  
+                                  mean = mean_mystery))
+```
+
+Book 4: Genre: Lyric: Plays "Pygmalion"
+
+```{r, echo=FALSE}
+#Book 4: Genre: Lyric: Plays "Pygmalion"
+
+gutenberg_works(title=="Pygmalion")
+
+book_p<-gutenberg_download(3825)
+
+
+tidy_p <- book_p %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
+                                                 ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_p<-tidy_p%>% anti_join(stop_words)
+
+p_sentiment <- tidy_p %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+p_plot<-ggplot(p_sentiment,aes(index,sentiment),fill=word,col=word)+geom_col(show.legend = FALSE,color="blue")+ ggtitle("Lyric: Pygmalion")+geom_hline(yintercept = 0,col="black")
+
+p_plot
+
+mean_lyric<-mean(p_sentiment$sentiment>0)#proportion of positive over negative sentiment
+
+Results<-bind_rows(Results,tibble(method="Lyric: Pygmalion",  
+                                  mean = mean_lyric))
+```
+
+```{r, echo=FALSE}
+#Book 5: Genre: Classic: The Iliad
+
+gutenberg_works(title=="The Iliad")
+
+book_iliad<-gutenberg_download(2199)
+
+
+tidy_iliad <- book_iliad %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, regex("^chapter [\\divxlc]", 
+                                                 ignore_case = TRUE)))) %>%
+  unnest_tokens(word, text)
+
+tidy_iliad<-tidy_iliad%>% anti_join(stop_words)
+
+iliad_sentiment <- tidy_iliad %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, index = linenumber %/% 80, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative)
+
+iliad_plot<-ggplot(iliad_sentiment,aes(index,sentiment),fill=word,col=word)+geom_col(show.legend = FALSE,color="brown")+ ggtitle("Classic: The Iliad")+geom_hline(yintercept = 0,col="black")
+
+iliad_plot
+
+mean_classic<-mean(iliad_sentiment$sentiment>0)#proportion of positive over negative sentiment
+
+```
+
+
+Combining the results below, we see that the Merry Adventures of Robin Hood has the most positive emotions while The Iliad and Crime and Punishment, both books touched the depths of negative sentiments.
+
+The results table shows the proportion of positive sentiments over negative sentiments and the means are pretty close for all the five books. The results also support the charts.
+
+```{r, echo=FALSE}
+ggarrange(iliad_plot,p_plot,rh_plot,re_plot,cp_plot)
+
+Results<-bind_rows(Results,tibble(method="Classic:The Iliad",  
+                                  mean = mean_classic))
+
+Results
+
+```
+
+
+# Conclusion
+The central **objective** of this report was to identify the best books to read for evoking positive emotions in the reader, based on Sensitivity Analysis, for ebooks freely available via Project Gutenberg. This report examined books from different genres to predict the positive sensitivity score, refrenced by the AFINN sentiment lexicon. Sixteen bookshelf categories were combined to create the five genres, Lyric, Classic, Great, Fun and Mystery.Top ten most uplifting books, based on the sensitivity scores,  were selected within each genre as well as for the entire data set containing almost 1000 books.
+
+In a deep dive exercise, a sample book was analyzed from each genre and the relationship between emotions and progression of narrative in these books was explored. It was found that while each book takes the reader on an emotional ride, some books, for example, The Merry Adventures of Robin Hood, have more highs than lows.
+
+## Limitations
+The Gutenberg Project consists of over 50,000 works. Only a small subset of 934 books was explored in this project.
+The analysis could be expanded to more works as well as more free ebook libraries for example, Google Books and zlib.
+
+# References
+* https://rafalab.github.io/dsbook/ 
+* Project Gutenberg. (n.d.). Retrieved September 21, 2020, from www.gutenberg.org
+* Finn Årup Nielsen, "A new ANEW: evaluation of a word list for sentiment analysis in microblogs", Proceedings of the ESWC2011 Workshop on 'Making Sense of Microposts': Big things come in small packages. Volume 718 in CEUR Workshop Proceedings: 93-98. 2011 May. Matthew Rowe, Milan Stankovic, Aba-Sah Dadzie, Mariann Hardey (editors)
+* https://www.tidytextmining.com/sentiment.html
